@@ -12,9 +12,15 @@ export interface SanitizationConfig {
 export interface ParamRules {
   allow?: string[];
   deny?: string[];
+  /** Compile allow/deny patterns with the RegExp `i` flag (case-insensitive). */
+  caseInsensitive?: boolean;
 }
 
 export interface ToolRuleSet {
+  /** Evaluation mode. "allowlist": allow checked first, deny as exceptions.
+   *  "denylist": deny checked, block if matched.
+   *  Inferred when omitted: "allowlist" if allow is non-empty, else "denylist". */
+  mode?: "allowlist" | "denylist";
   allow?: string[];
   deny?: string[];
   paramRules?: Record<string, ParamRules>;
@@ -38,6 +44,6 @@ export interface AegisConfig {
   rules: RulesConfig;
   systemPromptHint: boolean;
   logBlocked: boolean;
-  opaqueVaultNames: boolean;
+  detectSecretsInParams: boolean;
   circuitBreaker?: CircuitBreakerConfig;
 }

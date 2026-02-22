@@ -4,10 +4,7 @@ import type { SecretVault } from "./vault.js";
  * Builds a system prompt context hint for the model explaining
  * the Aegis firewall plugin and available vault placeholders.
  */
-export function buildSystemPromptHint(
-  vault: SecretVault,
-  options?: { opaqueVaultNames?: boolean },
-): string {
+export function buildSystemPromptHint(vault: SecretVault): string {
   const lines: string[] = [
     "[Aegis Firewall Active]",
     "",
@@ -24,15 +21,8 @@ export function buildSystemPromptHint(
     lines.push("");
     lines.push("Available secret placeholders:");
 
-    if (options?.opaqueVaultNames) {
-      // Reveal only generic numbered names to prevent the model from inferring secret purposes
-      for (let i = 0; i < names.length; i++) {
-        lines.push(`  - {{SECRET_${i + 1}}}`);
-      }
-    } else {
-      for (const name of names) {
-        lines.push(`  - {{${name}}}`);
-      }
+    for (const name of names) {
+      lines.push(`  - {{${name}}}`);
     }
   }
 

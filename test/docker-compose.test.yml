@@ -33,7 +33,7 @@ services:
       ]
     networks: [aegis-test]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:18789/ || exit 0"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:18789/ || exit 1"]
       interval: 3s
       retries: 30
       start_period: 5s

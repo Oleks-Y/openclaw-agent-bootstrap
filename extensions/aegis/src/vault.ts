@@ -1,4 +1,5 @@
 import type { VaultConfig } from "./types.js";
+import { deepWalk } from "./deep-walk.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z_][A-Z0-9_]*)\}\}/g;
 
@@ -21,7 +22,7 @@ export class SecretVault {
     this.reverseEntries = Object.entries(config)
       .filter(([, v]) => v.length > 0)
       .map(([placeholder, value]) => ({ value, placeholder }))
-      .sort((a, b) => b.value.length - a.value.length);
+      .toSorted((a, b) => b.value.length - a.value.length);
 
     // Cache the reverse lookup map once at construction
     this.reverseLookup = new Map(
@@ -42,7 +43,7 @@ export class SecretVault {
     this.encodedEntries = [];
     for (const entry of this.reverseEntries) {
       // Only bother with values that are long enough to be meaningful secrets
-      if (entry.value.length < 8) continue;
+      if (entry.value.length < 8) { continue; }
 
       const placeholder = `{{${entry.placeholder}}}`;
 
@@ -78,7 +79,7 @@ export class SecretVault {
 
   /** Replace real value -> {{NAME}} in a string */
   scrub(text: string): string {
-    if (!this.scrubRegex) return text;
+    if (!this.scrubRegex) { return text; }
 
     // Use cached reverse lookup
     this.scrubRegex.lastIndex = 0;
@@ -95,39 +96,23 @@ export class SecretVault {
     return result;
   }
 
+  /** Check if text contains any vault secret. Returns placeholder name or null. */
+  detectSecret(text: string): string | null {
+    if (!this.scrubRegex) { return null; }
+    this.scrubRegex.lastIndex = 0;
+    const match = this.scrubRegex.exec(text);
+    if (!match) { return null; }
+    const placeholder = this.reverseLookup.get(match[0]);
+    return placeholder?.replace(/^\{\{|\}\}$/g, "") ?? null;
+  }
+
   /** Deep-walk an object, injecting vault values into all string fields */
   injectParams<T>(params: T): T {
-    return this.deepWalk(params, (s) => this.inject(s));
+    return deepWalk(params, (s) => this.inject(s));
   }
 
   /** Deep-walk an object, scrubbing vault values from all string fields */
   scrubObject<T>(obj: T): T {
-    return this.deepWalk(obj, (s) => this.scrub(s));
-  }
-
-  private deepWalk<T>(obj: T, fn: (s: string) => string, visited?: WeakSet<object>): T {
-    if (typeof obj === "string") {
-      return fn(obj) as unknown as T;
-    }
-    if (obj === null || typeof obj !== "object") {
-      return obj;
-    }
-
-    // Circular reference protection
-    const seen = visited ?? new WeakSet<object>();
-    if (seen.has(obj as object)) {
-      return obj;
-    }
-    seen.add(obj as object);
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.deepWalk(item, fn, seen)) as unknown as T;
-    }
-
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      result[key] = this.deepWalk(value, fn, seen);
-    }
-    return result as T;
+    return deepWalk(obj, (s) => this.scrub(s));
   }
 }

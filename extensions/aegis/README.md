@@ -331,7 +331,7 @@ Set in `openclaw.json` under `plugins.entries.aegis.config`:
     "defaults": { "deny": [] },   // Fallback rules
     "tools": {
       "exec": {
-        "deny": [".*"],           // Deny-all base
+        "mode": "allowlist",      // Only allow-listed commands pass
         "allow": ["^ls\\b"],      // Explicit allow-list
         "paramRules": {
           "command": {
@@ -350,8 +350,8 @@ Set in `openclaw.json` under `plugins.entries.aegis.config`:
   // Log blocked tool calls
   "logBlocked": true,
 
-  // Hide real placeholder names from model
-  "opaqueVaultNames": false,
+  // Block outbound tool calls containing raw secrets
+  "detectSecretsInParams": true,
 
   // Optional circuit breaker
   "circuitBreaker": {

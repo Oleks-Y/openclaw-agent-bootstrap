@@ -28,5 +28,35 @@
     },
     "createdAtMs": 1771167636141,
     "approvedAtMs": 1771167636141
+  },
+  "e5b16f5928537dc0fa1592c55c6f2e5c3118912cbdd37c1fb97b11aa0e94a92b": {
+    "deviceId": "e5b16f5928537dc0fa1592c55c6f2e5c3118912cbdd37c1fb97b11aa0e94a92b",
+    "publicKey": "OIWTHKO8wgX6L4JR_qV3nz_g0u9u_3Pu0uvIuVJPfHo",
+    "platform": "linux",
+    "clientId": "cli",
+    "clientMode": "cli",
+    "role": "operator",
+    "roles": [
+      "operator"
+    ],
+    "scopes": [
+      "operator.admin",
+      "operator.approvals",
+      "operator.pairing"
+    ],
+    "tokens": {
+      "operator": {
+        "token": "TqwtPYlu7bVoQP6727-sAS6xwbrjSXZPrNm9YTWAfds",
+        "role": "operator",
+        "scopes": [
+          "operator.admin",
+          "operator.approvals",
+          "operator.pairing"
+        ],
+        "createdAtMs": 1771171205997
+      }
+    },
+    "createdAtMs": 1771171205997,
+    "approvedAtMs": 1771171205997
   }
 }

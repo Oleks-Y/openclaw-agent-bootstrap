@@ -14,10 +14,10 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
     defaults: { deny: [] },
     tools: {
       // -----------------------------------------------------------------------
-      // EXEC — Allow-list architecture: deny all by default, allow safe commands
+      // EXEC — Allowlist: deny all by default, allow safe commands
       // -----------------------------------------------------------------------
       exec: {
-        deny: [String.raw`.*`],
+        mode: "allowlist",
         allow: [
           String.raw`^ls\b`,
           String.raw`^git\s+(status|log|diff|show|branch)`,
@@ -44,6 +44,14 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
               String.raw`rm\s+-rf\s+/(?!tmp)`,
               String.raw`curl.*\|\s*sh`,
               String.raw`cat\s+.*\.env`,
+              // Shell chaining / operator injection
+              ";",
+              String.raw`&&`,
+              String.raw`\|\|`,
+              String.raw`\|`,
+              String.raw`\x60`,          // backtick command substitution
+              String.raw`\$\(`,          // $() command substitution
+              String.raw`[><]`,          // redirects
             ],
           },
         },
@@ -52,26 +60,17 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
       },
 
       // -----------------------------------------------------------------------
-      // READ — Allow-list: only workspace-relative paths
+      // READ — Allowlist: only workspace-relative paths
+      // Key normalization (camelCase/snake_case) handles both file_path and filePath
       // -----------------------------------------------------------------------
       read: {
-        deny: [String.raw`.*`],
+        mode: "allowlist",
         allow: [String.raw`^\.\/`, String.raw`^\/workspace\/`],
         paramRules: {
           file_path: {
             allow: [String.raw`^\.\/`, String.raw`^\/workspace\/`],
             deny: [
-              String.raw`\.ssh\/`,
-              String.raw`\.env$`,
-              String.raw`\/etc\/shadow`,
-              String.raw`\/etc\/passwd`,
-              String.raw`\.aws\/`,
-              String.raw`\/proc\/`,
-            ],
-          },
-          filePath: {
-            allow: [String.raw`^\.\/`, String.raw`^\/workspace\/`],
-            deny: [
+              String.raw`\.\.`,
               String.raw`\.ssh\/`,
               String.raw`\.env$`,
               String.raw`\/etc\/shadow`,
@@ -85,26 +84,17 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
       },
 
       // -----------------------------------------------------------------------
-      // WRITE — Allow-list: only workspace-relative paths
+      // WRITE — Allowlist: only workspace-relative paths
+      // Key normalization (camelCase/snake_case) handles both file_path and filePath
       // -----------------------------------------------------------------------
       write: {
-        deny: [String.raw`.*`],
+        mode: "allowlist",
         allow: [String.raw`^\.\/`, String.raw`^\/workspace\/`],
         paramRules: {
           file_path: {
             allow: [String.raw`^\.\/`, String.raw`^\/workspace\/`],
             deny: [
-              String.raw`^\/etc\/`,
-              String.raw`^\/usr\/`,
-              String.raw`\.ssh\/`,
-              String.raw`\.env$`,
-              String.raw`^\/proc\/`,
-              String.raw`^\/sys\/`,
-            ],
-          },
-          filePath: {
-            allow: [String.raw`^\.\/`, String.raw`^\/workspace\/`],
-            deny: [
+              String.raw`\.\.`,
               String.raw`^\/etc\/`,
               String.raw`^\/usr\/`,
               String.raw`\.ssh\/`,
@@ -119,10 +109,13 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
 
       // -----------------------------------------------------------------------
       // WEB_FETCH — Expanded SSRF deny list
+      // NOTE: Arbitrary DNS rebinding (e.g. internal.corp resolving to 127.0.0.1)
+      // cannot be caught by regex — this is a known limitation.
       // -----------------------------------------------------------------------
       web_fetch: {
         paramRules: {
           url: {
+            caseInsensitive: true,
             deny: [
               // IPv4 loopback and link-local
               String.raw`127\.`,
@@ -133,6 +126,9 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
               // IPv6 loopback and unspecified
               String.raw`\[::1\]`,
               String.raw`\[::\]`,
+
+              // IPv4-mapped IPv6 (e.g. http://[::ffff:127.0.0.1]/)
+              String.raw`\[::ffff:`,
 
               // Private ranges (RFC 1918)
               String.raw`10\.`,
@@ -150,6 +146,15 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
               String.raw`0x7f`,
               String.raw`0177\.`,
 
+              // URL-encoded localhost/127
+              String.raw`%31%32%37`,                       // "127"
+              String.raw`%6c%6f%63%61%6c%68%6f%73%74`,    // "localhost"
+
+              // Known DNS rebinding wildcard services
+              String.raw`\.nip\.io`,
+              String.raw`\.sslip\.io`,
+              String.raw`\.xip\.io`,
+
               // Dangerous protocols
               String.raw`^file:\/\/`,
               String.raw`^gopher:\/\/`,
@@ -163,6 +168,7 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
 
       // -----------------------------------------------------------------------
       // SESSIONS — Default deny: must be explicitly allowed by user config
+      // (mode inferred as "denylist" since no allow patterns)
       // -----------------------------------------------------------------------
       sessions_send: {
         deny: [String.raw`.*`],
@@ -179,5 +185,5 @@ export const DEFAULT_AEGIS_CONFIG: AegisConfig = {
 
   systemPromptHint: true,
   logBlocked: true,
-  opaqueVaultNames: false,
+  detectSecretsInParams: true,
 };

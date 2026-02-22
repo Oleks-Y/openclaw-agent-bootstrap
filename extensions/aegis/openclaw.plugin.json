@@ -9,6 +9,7 @@
       "vault": {
         "type": "object",
         "additionalProperties": { "type": "string" },
+        "propertyNames": { "pattern": "^[A-Z_][A-Z0-9_]*$" },
         "default": {}
       },
       "sanitization": {
@@ -39,7 +40,18 @@
         "default": {}
       },
       "systemPromptHint": { "type": "boolean", "default": true },
-      "logBlocked": { "type": "boolean", "default": true }
+      "logBlocked": { "type": "boolean", "default": true },
+      "detectSecretsInParams": { "type": "boolean", "default": true },
+      "circuitBreaker": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "maxBlocked": { "type": "integer", "minimum": 1 },
+          "windowMs": { "type": "integer", "minimum": 1000 },
+          "action": { "type": "string", "enum": ["suspend", "warn"] }
+        },
+        "required": ["maxBlocked", "windowMs", "action"]
+      }
     },
     "$defs": {
       "paramRules": {
@@ -47,13 +59,15 @@
         "additionalProperties": false,
         "properties": {
           "allow": { "type": "array", "items": { "type": "string" } },
-          "deny": { "type": "array", "items": { "type": "string" } }
+          "deny": { "type": "array", "items": { "type": "string" } },
+          "caseInsensitive": { "type": "boolean", "default": false }
         }
       },
       "toolRuleSet": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "mode": { "type": "string", "enum": ["allowlist", "denylist"] },
           "allow": { "type": "array", "items": { "type": "string" } },
           "deny": { "type": "array", "items": { "type": "string" } },
           "paramRules": {
@@ -87,6 +101,10 @@
     "logBlocked": {
       "label": "Log Blocked Calls",
       "help": "Log blocked tool calls to the plugin logger."
+    },
+    "detectSecretsInParams": {
+      "label": "Detect Secrets in Params",
+      "help": "Block outbound tool calls that contain raw secrets or secret-like patterns in parameters."
     }
   }
 }
