@@ -356,3 +356,135 @@ describe("Sanitizer constructor — invalid patterns", () => {
     assert.ok(warnings[0].includes("[invalid("), `Warning should mention the bad pattern: ${warnings[0]}`);
   });
 });
+
+// ===========================================================================
+// useDefaultPatterns: false
+// ===========================================================================
+describe("Sanitizer — useDefaultPatterns: false", () => {
+  it("disables default patterns, only extraPatterns active", () => {
+    const s = makeSanitizer({
+      useDefaultPatterns: false,
+      extraPatterns: ["custom-secret"],
+    });
+
+    // Default pattern (sk-) should NOT match
+    assert.equal(s.containsSecret("sk-abc123def456ghijklmnopqr"), false);
+
+    // Custom pattern should match
+    assert.equal(s.containsSecret("found custom-secret here"), true);
+  });
+
+  it("with no patterns at all, nothing is detected", () => {
+    const s = makeSanitizer({
+      useDefaultPatterns: false,
+      extraPatterns: [],
+    });
+
+    assert.equal(s.containsSecret("sk-abc123def456ghijklmnopqr"), false);
+    assert.equal(s.containsSecret("AKIAIOSFODNN7EXAMPLE"), false);
+    assert.equal(s.containsSecret("anything"), false);
+  });
+});
+
+// ===========================================================================
+// Untested token patterns
+// ===========================================================================
+describe("Sanitizer.containsSecret — additional token patterns", () => {
+  const s = makeSanitizer();
+
+  it("detects github_pat_ fine-grained PAT", () => {
+    assert.equal(s.containsSecret("github_pat_ABCDEFGHIJKLMNOPQRSTUV"), true);
+  });
+
+  it("detects Slack xoxb- bot token", () => {
+    assert.equal(s.containsSecret("xoxb-123456789-abcdefghij"), true);
+  });
+
+  it("detects Slack xapp- app-level token", () => {
+    assert.equal(s.containsSecret("xapp-1-abcdefghij-12345"), true);
+  });
+
+  it("detects Groq gsk_ token", () => {
+    assert.equal(s.containsSecret("gsk_abcdefghijklmnopqrstuvwx"), true);
+  });
+
+  it("detects Google AIza API key", () => {
+    assert.equal(s.containsSecret("AIzaSyCqWto3u8vN-AbCdEfGhIjKlMnOpQrStUvW"), true);
+  });
+
+  it("detects Perplexity pplx- token", () => {
+    assert.equal(s.containsSecret("pplx-abcdefghijklmnopqrstuvwx"), true);
+  });
+
+  it("detects npm npm_ token", () => {
+    assert.equal(s.containsSecret("npm_abcdefghijklmnopqrstuvwx"), true);
+  });
+
+  it("detects Stripe sk_live_ key", () => {
+    // Construct dynamically to avoid triggering GitHub push protection
+    const stripeKey = `sk_live_${"a]b[c}d{e".repeat(4)}`.replace(/[[\]{}]/g, "f");
+    assert.equal(s.containsSecret(stripeKey), true);
+  });
+
+  it("detects Twilio SK key", () => {
+    // Construct dynamically to avoid triggering GitHub push protection
+    const twilioKey = "SK" + "0a1b2c3d".repeat(4);
+    assert.equal(s.containsSecret(twilioKey), true);
+  });
+
+  it("detects SendGrid SG. key", () => {
+    assert.equal(s.containsSecret("SG.abc_def-ghi_jkl"), true);
+  });
+
+  it("detects colon-separated secrets (e.g. bot ID:token)", () => {
+    assert.equal(s.containsSecret("123456789:ABCDEFGHIJKLMNOPQRSTUvwxyz12345678"), true);
+  });
+});
+
+// ===========================================================================
+// lastIndex statefulness
+// ===========================================================================
+describe("Sanitizer.containsSecret — lastIndex statefulness", () => {
+  it("returns same result on 3 consecutive calls", () => {
+    const s = makeSanitizer();
+    const text = "sk-abc123def456ghijklmnopqr";
+
+    assert.equal(s.containsSecret(text), true);
+    assert.equal(s.containsSecret(text), true);
+    assert.equal(s.containsSecret(text), true);
+  });
+
+  it("returns same false result on consecutive calls", () => {
+    const s = makeSanitizer();
+    const text = "no secrets here at all";
+
+    assert.equal(s.containsSecret(text), false);
+    assert.equal(s.containsSecret(text), false);
+    assert.equal(s.containsSecret(text), false);
+  });
+});
+
+// ===========================================================================
+// Idempotency
+// ===========================================================================
+describe("Sanitizer.sanitize — idempotency", () => {
+  it("sanitize(sanitize(x)) === sanitize(x)", () => {
+    const s = makeSanitizer();
+    const input = "key=sk-abc123def456ghijklmnopqr and AKIAIOSFODNN7EXAMPLE";
+
+    const once = s.sanitize(input);
+    const twice = s.sanitize(once);
+
+    assert.equal(once, twice, "sanitize should be idempotent");
+  });
+
+  it("sanitize is idempotent for Bearer token", () => {
+    const s = makeSanitizer();
+    const input = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890 ";
+
+    const once = s.sanitize(input);
+    const twice = s.sanitize(once);
+
+    assert.equal(once, twice);
+  });
+});

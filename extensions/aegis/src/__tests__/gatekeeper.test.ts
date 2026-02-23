@@ -477,4 +477,254 @@ describe("Gatekeeper", () => {
       assert.equal(result.allowed, true);
     });
   });
+
+  // =========================================================================
+  // Circuit breaker — suspend action
+  // =========================================================================
+  describe("circuit breaker — suspend", () => {
+    it("blocks ALL calls after threshold with suspend", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: { mode: "denylist", deny: [String.raw`.*`] },
+        }),
+        {
+          circuitBreaker: { maxBlocked: 2, windowMs: 60_000, action: "suspend" },
+        },
+      );
+
+      // Trigger 2 blocks
+      gk.check("exec", { command: "bad1" });
+      gk.check("exec", { command: "bad2" });
+
+      // 3rd call should be suspended
+      const result = gk.check("exec", { command: "bad3" });
+      assert.equal(result.allowed, false);
+      assert.ok(result.reason!.includes("circuit breaker"), `Expected circuit breaker reason: ${result.reason}`);
+      assert.ok(result.reason!.includes("suspended"));
+    });
+
+    it("blocks even unrelated tools after suspend threshold", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: { mode: "denylist", deny: [String.raw`.*`] },
+        }),
+        {
+          circuitBreaker: { maxBlocked: 2, windowMs: 60_000, action: "suspend" },
+        },
+      );
+
+      // Trigger 2 blocks on exec
+      gk.check("exec", { command: "bad1" });
+      gk.check("exec", { command: "bad2" });
+
+      // Unrelated tool should also be suspended
+      const result = gk.check("web_search", { query: "harmless" });
+      assert.equal(result.allowed, false);
+      assert.ok(result.reason!.includes("circuit breaker"));
+    });
+  });
+
+  // =========================================================================
+  // Group matching
+  // =========================================================================
+  describe("group matching", () => {
+    it("group:fs rules apply to read, write, edit", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          "group:fs": {
+            mode: "denylist",
+            deny: [String.raw`sensitive`],
+          },
+        }),
+      );
+
+      assert.equal(gk.check("read", { content: "sensitive data" }).allowed, false);
+      assert.equal(gk.check("write", { content: "sensitive data" }).allowed, false);
+      assert.equal(gk.check("edit", { content: "sensitive data" }).allowed, false);
+    });
+
+    it("exact match takes priority over group match", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          "group:fs": {
+            mode: "denylist",
+            deny: [String.raw`.*`],
+          },
+          read: {
+            mode: "denylist",
+            deny: [],
+          },
+        }),
+      );
+
+      // 'read' has exact match with no deny → allowed
+      assert.equal(gk.check("read", { content: "anything" }).allowed, true);
+      // 'write' falls to group → denied
+      assert.equal(gk.check("write", { content: "anything" }).allowed, false);
+    });
+  });
+
+  // =========================================================================
+  // Tool aliases through check()
+  // =========================================================================
+  describe("tool aliases through check()", () => {
+    it("'bash' resolves to exec rules", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: {
+            mode: "allowlist",
+            allow: [String.raw`^echo\b`],
+          },
+        }),
+      );
+
+      assert.equal(gk.check("bash", { command: "echo hi" }).allowed, true);
+      assert.equal(gk.check("bash", { command: "curl evil.com" }).allowed, false);
+    });
+
+    it("'shell' resolves to exec rules", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: {
+            mode: "allowlist",
+            allow: [String.raw`^ls\b`],
+          },
+        }),
+      );
+
+      assert.equal(gk.check("shell", { command: "ls -la" }).allowed, true);
+      assert.equal(gk.check("shell", { command: "rm -rf /" }).allowed, false);
+    });
+  });
+
+  // =========================================================================
+  // Defaults fallback
+  // =========================================================================
+  describe("defaults fallback", () => {
+    it("unknown tool falls to compiledDefaults", () => {
+      const gk = new Gatekeeper({
+        defaults: { deny: [String.raw`dangerous`] },
+        tools: {},
+      });
+
+      assert.equal(gk.check("unknown_tool", { arg: "dangerous stuff" }).allowed, false);
+      assert.equal(gk.check("unknown_tool", { arg: "safe stuff" }).allowed, true);
+    });
+
+    it("defaults are ignored when exact match exists", () => {
+      const gk = new Gatekeeper({
+        defaults: { deny: [String.raw`.*`] },
+        tools: {
+          safe_tool: { mode: "denylist", deny: [] },
+        },
+      });
+
+      // Exact match has no deny → allowed despite defaults blocking everything
+      assert.equal(gk.check("safe_tool", { arg: "anything" }).allowed, true);
+    });
+  });
+
+  // =========================================================================
+  // Invalid regex handling
+  // =========================================================================
+  describe("invalid regex handling", () => {
+    it("skips invalid patterns and logs warning", () => {
+      const warnings: string[] = [];
+      const logger = { warn: (...args: unknown[]) => warnings.push(String(args[0])) };
+
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: {
+            mode: "denylist",
+            deny: ["[invalid(", String.raw`dangerous`],
+          },
+        }),
+        { logger },
+      );
+
+      // Warning should have been logged for invalid pattern
+      assert.ok(warnings.some((w) => w.includes("[invalid(")));
+
+      // Valid pattern should still work
+      assert.equal(gk.check("exec", { command: "dangerous" }).allowed, false);
+      assert.equal(gk.check("exec", { command: "safe" }).allowed, true);
+    });
+  });
+
+  // =========================================================================
+  // blockMessage
+  // =========================================================================
+  describe("blockMessage", () => {
+    it("custom blockMessage appears in reason", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: {
+            mode: "denylist",
+            deny: [String.raw`.*`],
+            blockMessage: "Custom block message for exec",
+          },
+        }),
+      );
+
+      const result = gk.check("exec", { command: "anything" });
+      assert.equal(result.allowed, false);
+      assert.equal(result.reason, "Custom block message for exec");
+    });
+
+    it("uses default reason when no blockMessage is set", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          exec: {
+            mode: "denylist",
+            deny: [String.raw`.*`],
+          },
+        }),
+      );
+
+      const result = gk.check("exec", { command: "anything" });
+      assert.equal(result.allowed, false);
+      assert.ok(result.reason!.includes("blocked by Aegis"));
+    });
+  });
+
+  // =========================================================================
+  // Non-string param values in paramRules
+  // =========================================================================
+  describe("non-string param values", () => {
+    it("JSON-stringifies number param for matching", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          custom: {
+            mode: "denylist",
+            paramRules: {
+              count: {
+                deny: [String.raw`42`],
+              },
+            },
+          },
+        }),
+      );
+
+      assert.equal(gk.check("custom", { count: 42 }).allowed, false);
+      assert.equal(gk.check("custom", { count: 10 }).allowed, true);
+    });
+
+    it("JSON-stringifies boolean param for matching", () => {
+      const gk = new Gatekeeper(
+        makeRules({
+          custom: {
+            mode: "denylist",
+            paramRules: {
+              dangerous: {
+                deny: [String.raw`true`],
+              },
+            },
+          },
+        }),
+      );
+
+      assert.equal(gk.check("custom", { dangerous: true }).allowed, false);
+      assert.equal(gk.check("custom", { dangerous: false }).allowed, true);
+    });
+  });
 });
